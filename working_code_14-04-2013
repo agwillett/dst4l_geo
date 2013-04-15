@@ -1,0 +1,133 @@
+'''
+Created on Apr 14, 2013
+
+@author: amckenzie
+'''
+
+# -*- coding: utf-8 -*-
+import requests
+import json
+from pprint import pprint
+import time
+ 
+PREFIX="http://adslabs.org/adsabs/api/search/"
+APIKEY="SHHH IT IS A SECRET"
+ 
+import re
+re2='(&#176;)'
+ 
+re1='((?:\S+))'
+re3=re1
+rg = re.compile(re1+re2+re3,re.IGNORECASE|re.DOTALL)
+
+def myfunction(myword, start, numrows, filename, localmode=False):
+    # Generate the URL to make the query
+    theurlis=PREFIX+"?q="+myword+"&hl=full&hl=abstract&rows="+str(numrows)+"&start="+str(start)+"&dev_key="+APIKEY
+    #print "The URL is " + theurlis
+    matchresults={}
+    # If you have access to the URL, do some stuff.
+    if not localmode:
+        # Query the URL
+        result=requests.get(theurlis)
+        
+        # Set a variable with the output of result, as text
+        myjson=result.content
+        # Turn the output into a dictionary -- JSON can easily be decoded into one, so do it.
+        myresultdict=json.loads(myjson)
+        # Pull out just the bit we care about.  This should be a list now.
+        myresults=myresultdict['results']['docs']
+        
+        # Create a dictionary containing bibcode:highlights pairs from the results
+        # Note that "highligts" contains a dictionary.  I don't know why.
+        myshortformresults={e['bibcode']: e['highlights'] for e in myresults}
+        
+        # The next four lines generate JSON code and put it in a text file so you can look at it later.
+        out=json.dumps(myshortformresults)
+        #### For debugging, print the filename.
+        #print "filename is " + filename
+        fd=open(filename, "w")
+        fd.write(out)
+        fd.close()
+    # If you don't have access to the URL, pull from a file.    
+    else:
+        stufftr=open(filename).read()
+        myshortformresults=json.loads(stufftr)
+
+    #### Uncomment this to see what's in myshortformresults    
+    #print "myshortformresults contains: \n"
+    #pprint(myshortformresults, indent=2)
+        
+        
+
+    for bibcode in myshortformresults.keys():
+        resultsdict=myshortformresults[bibcode]
+        for resulttype in resultsdict.keys():
+            snippets=resultsdict[resulttype]
+            for snippet in snippets:
+                m=rg.search(snippet)
+                if m:
+                    var1=m.group(1)
+                    c1=m.group(2)
+                    var3=m.group(3)
+                    print bibcode, "("+var1+")"+"("+c1+")"+"("+var3+")"+"\n"
+                    matchresults[bibcode]=(var1,var3)
+
+    
+    return matchresults
+ 
+if __name__=="__main__":
+    import sys
+    # snip="of 25&#176;N and 40&#176;N is used"
+    # m=rg.search(snip)
+    # if m:
+    #     float1=m.group(1)
+    #     c1=m.group(2)
+    #     var1=m.group(3)
+    #     print "("+float1+")"+"("+c1+")"+"("+var1+")"+"\n"
+    
+    if len(sys.argv)<=1 or len(sys.argv) > 2:
+        print "No mode specified\n"
+        sys.exit(0)
+    mode=sys.argv[1]
+    print "MODE is", mode
+    if mode=="False" or mode=="false":
+        mode=False
+    mode=bool(mode)
+    print "MODE IS", mode
+    # Now we want to use "myfunction", which looks like this:
+    #    def myfunction(myword, start, numrows, filename, localmode=False)
+    allresults = {}
+    file_path = "USE THE FULL FILE PATH (C:\etc etc) REMEMBER TO ADD EXTRA SLASHES TO ESCAPE THE ESCAPE"
+    for i in range(10):
+        out=myfunction("latitude", i*100+1, 100, file_path + "/results"+str(i)+".txt", mode)
+        allresults.update(out)
+    
+    #### To see everything that has been returned, uncomment the next two lines    
+    #print "\n\n allresults contains:\n"
+    #pprint(allresults)
+
+    # fd=open("results"+str(i)+".txt", "w")
+    # fd.write(out)
+    # fd.close()
+    #time.sleep(1)
+    
+    
+    
+    
+    
+    """ Logic for parsing co-ordinates.
+    1) query for documents containing the word "latitude" -- dump into new dict.
+    Query for 100 results at a time.
+    2) Cull all documents that do not also include the word "longitude" -- either
+    remove from dict, or put documents that do include "longitude" into new dict.
+    3) Now, fix the degrees/minutes notation.  Replace "&#176;" with "deg"
+    and "&#8242;" with "min".  This will make things easier later.  Just fix it
+    in whatever dict you're looking at.
+    4) Check each deg/min pair:  it should be followed by either a North/South
+    or East/West indicator.  That tells you whether it's longitude or latitude.
+    NOTE:  Some snippits have multiple locations!  ie, "by the <em>longitudes</em> 6&#176;00&#8242; and 6&#176;48&#8242;W and <em>latitudes</em> 53&#176;07&#8242; and 53&#176;35&#8242;N."
+    That will be hard to match, but may be possible to throw in an "I don't know 
+    what to do with this" dict.
+    5) Repeat steps 1-4 until you've looked at all the possible results
+    
+    """
